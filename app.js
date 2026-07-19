@@ -51,7 +51,18 @@ function setupCanvas(id){
  return c
 }
 setupCanvas('sigTech');setupCanvas('sigClient');$$('[data-clear]').forEach(b=>b.onclick=()=>{const c=$('#'+b.dataset.clear);if(c.clearSignature)c.clearSignature()});
-function data(){const o=Object.fromEntries(new FormData($('#form')).entries());o.checks=CHECKS[o.type].map((_,i)=>o['check'+(i+1)]||'Oui');o.sigTech=$('#sigTech').dataset.hasInk==='1'?$('#sigTech').toDataURL('image/png'):'';o.sigClient=$('#sigClient').dataset.hasInk==='1'?$('#sigClient').toDataURL('image/png'):'';o.id=o.id||`${Date.now()}`;o.savedAt=new Date().toISOString();return o}
+function croppedSignatureData(canvas){
+ if(canvas.dataset.hasInk!=='1')return '';
+ const ctx=canvas.getContext('2d',{willReadFrequently:true}),img=ctx.getImageData(0,0,canvas.width,canvas.height),a=img.data;
+ let minX=canvas.width,minY=canvas.height,maxX=-1,maxY=-1;
+ for(let y=0;y<canvas.height;y++)for(let x=0;x<canvas.width;x++){if(a[(y*canvas.width+x)*4+3]>20){if(x<minX)minX=x;if(x>maxX)maxX=x;if(y<minY)minY=y;if(y>maxY)maxY=y}}
+ if(maxX<0)return '';
+ const pad=Math.max(10,Math.round(Math.min(canvas.width,canvas.height)*.05));
+ minX=Math.max(0,minX-pad);minY=Math.max(0,minY-pad);maxX=Math.min(canvas.width-1,maxX+pad);maxY=Math.min(canvas.height-1,maxY+pad);
+ const out=document.createElement('canvas');out.width=maxX-minX+1;out.height=maxY-minY+1;out.getContext('2d').drawImage(canvas,minX,minY,out.width,out.height,0,0,out.width,out.height);
+ return out.toDataURL('image/png');
+}
+function data(){const o=Object.fromEntries(new FormData($('#form')).entries());o.checks=CHECKS[o.type].map((_,i)=>o['check'+(i+1)]||'Oui');o.sigTech=croppedSignatureData($('#sigTech'));o.sigClient=croppedSignatureData($('#sigClient'));o.id=o.id||`${Date.now()}`;o.savedAt=new Date().toISOString();return o}
 function save(){if(!$('#form').reportValidity())return;const d=data(),list=load();const i=list.findIndex(x=>x.id===d.id);i>=0?list[i]=d:list.unshift(d);localStorage.setItem(STORE,JSON.stringify(list));$('#form').dataset.id=d.id;renderHistory();toast('Entretien enregistré')}
 function load(){try{return JSON.parse(localStorage.getItem(STORE)||'[]')}catch{return []}}
 function renderHistory(){const q=($('#search').value||'').toLowerCase(),box=$('#history');box.innerHTML='';load().filter(d=>`${d.clientNom} ${d.ville} ${d.type}`.toLowerCase().includes(q)).forEach(d=>{const r=document.createElement('div');r.className='history-item';r.innerHTML=`<div><strong>${d.clientNom||'Sans nom'}</strong><div>${d.ville||''} — ${d.type} — ${d.dateVisite||''}</div></div><div><button>Ouvrir</button> <button>Supprimer</button></div>`;const [a,b]=r.querySelectorAll('button');a.onclick=()=>fill(d);b.onclick=()=>{if(confirm('Supprimer cet entretien ?')){localStorage.setItem(STORE,JSON.stringify(load().filter(x=>x.id!==d.id)));renderHistory()}};box.appendChild(r)});if(!box.children.length)box.innerHTML='<p class="hint">Aucun entretien enregistré.</p>'}
@@ -68,19 +79,16 @@ function widgetName(dict){const parent=dict.lookupMaybe(PDFName.of('Parent'),PDF
 function widgetRect(dict){const a=dict.lookupMaybe(PDFName.of('Rect'),PDFArray);if(!a||a.size()<4)return null;const n=i=>a.lookup(i).asNumber();const x1=n(0),y1=n(1),x2=n(2),y2=n(3);return {x:Math.min(x1,x2),y:Math.min(y1,y2),width:Math.abs(x2-x1),height:Math.abs(y2-y1)}}
 function collectWidgets(doc){const out=[];doc.getPages().forEach((page,pageIndex)=>{const annots=page.node.Annots();if(!annots)return;for(let i=0;i<annots.size();i++){const ref=annots.get(i),dict=doc.context.lookup(ref,PDFDict);if(!dict)continue;const subtype=dict.lookupMaybe(PDFName.of('Subtype'),PDFName);if(subtype?.toString()!=='/Widget')continue;const name=widgetName(dict),rect=widgetRect(dict);if(name&&rect)out.push({page,pageIndex,name,rect,ref,dict})}});return out}
 function wrapLines(text,font,size,maxWidth){const lines=[];for(const raw of cleanPdfText(text).split(/\r?\n/)){const words=raw.split(/\s+/).filter(Boolean);if(!words.length){lines.push('');continue}let line='';for(const w of words){const test=line?line+' '+w:w;if(font.widthOfTextAtSize(test,size)<=maxWidth)line=test;else{if(line)lines.push(line);line=w}}if(line)lines.push(line)}return lines}
-function drawInRect(page,rect,text,font,{multiline=false,align='left',top=false,ruled=false}={}){
+function paintFieldBackground(page,rect,{margin=.6,color=rgb(1,1,1)}={}){
+ page.drawRectangle({x:rect.x-margin,y:rect.y-margin,width:rect.width+margin*2,height:rect.height+margin*2,color});
+}
+function drawInRect(page,rect,text,font,{multiline=false,align='left',top=false,ruled=false,sizeHint=0}={}){
  if(text===undefined||text===null||text==='')return;
  const value=cleanPdfText(text),pad=3,maxW=Math.max(2,rect.width-pad*2),maxH=Math.max(2,rect.height-pad*2);
- if(ruled){
-  let size=7.2,step=15.8,lines=wrapLines(value,font,size,maxW),maxLines=Math.max(1,Math.floor((rect.height-5)/step));
-  if(lines.length>maxLines){size=6.4;step=15.8;lines=wrapLines(value,font,size,maxW)}
-  lines=lines.slice(0,maxLines);let y=rect.y+rect.height-11;
-  for(const line of lines){page.drawText(line,{x:rect.x+4,y,size,font,color:rgb(0,0,0)});y-=step}return;
- }
- let size=multiline?7.2:6.7,lines=multiline?wrapLines(value,font,size,maxW):[value.replace(/\s*\n\s*/g,' ')];
- while(size>=5.4){const widest=Math.max(...lines.map(l=>font.widthOfTextAtSize(l,size)),0);if(widest<=maxW&&lines.length*size*1.28<=maxH)break;size-=.25;lines=multiline?wrapLines(value,font,size,maxW):lines}
- const lineH=size*1.28;let y=top?rect.y+rect.height-size-5:rect.y+Math.max(1.8,(rect.height-size)/2+.6);
- for(const line of lines){let x=rect.x+pad;if(align==='center')x=rect.x+(rect.width-font.widthOfTextAtSize(line,size))/2;page.drawText(line,{x,y,size,font,color:rgb(0,0,0)});y-=lineH}
+ let size=sizeHint||((multiline||ruled)?7.4:7.0),lines=(multiline||ruled)?wrapLines(value,font,size,maxW):[value.replace(/\s*\n\s*/g,' ')];
+ while(size>=5.6){const widest=Math.max(...lines.map(l=>font.widthOfTextAtSize(l,size)),0);if(widest<=maxW&&lines.length*size*1.35<=maxH)break;size-=.25;lines=(multiline||ruled)?wrapLines(value,font,size,maxW):lines}
+ const lineH=size*1.35;let y=top||ruled?rect.y+rect.height-size-4:rect.y+Math.max(2,(rect.height-size)/2+.6);
+ for(const line of lines){let x=rect.x+pad;if(align==='center')x=rect.x+(rect.width-font.widthOfTextAtSize(line,size))/2;page.drawText(line,{x,y,size,font,color:rgb(0,0,0)});y-=lineH;if(y<rect.y+1)break}
 }
 function removeWidgets(doc){for(const page of doc.getPages()){const annots=page.node.Annots();if(!annots)continue;const kept=[];for(let i=0;i<annots.size();i++){const ref=annots.get(i),dict=doc.context.lookup(ref,PDFDict),sub=dict?.lookupMaybe(PDFName.of('Subtype'),PDFName)?.toString();if(sub!=='/Widget')kept.push(ref)}if(kept.length){const arr=doc.context.obj(kept);page.node.set(PDFName.of('Annots'),arr)}else page.node.delete(PDFName.of('Annots'))}doc.catalog.delete(PDFName.of('AcroForm'))}
 function checkGroupOrder(type){if(type==='gaz')return ['Groupe1','Groupe2','Groupe3','Groupe4','Groupe5','Groupe6','Groupe7','Groupe8','Groupe81','Groupe82','Groupe83','Groupe84','Groupe85','Groupe86','Groupe9','Groupe10','Groupe11'];if(type==='fioul')return Array.from({length:20},(_,i)=>`Groupe${i+1}`);return Array.from({length:17},(_,i)=>`Groupe${i+1}`)}
@@ -96,13 +104,24 @@ async function createPdf(){if(!$('#form').reportValidity())return;save();const d
  const multilineNames=new Set(['A2-Coordonnees prestataire','A2-Coordonnees client','A2-Adresse installation','A2-Local chaudiere','A2-Appareil mesure','A2-Marque et rélérence']);
  const ruledNames=new Set(['A2-Defauts corriges','A2-Usage','A2-Ameliorations','A2-Remplacement']);
  const topNames=new Set(['A2-Coordonnees prestataire','A2-Coordonnees client','A2-Adresse installation','A2-Local chaudiere','A2-Appareil mesure','A2-Marque et rélérence']);
- for(const w of widgets){if(Object.prototype.hasOwnProperty.call(values,w.name))drawInRect(w.page,w.rect,values[w.name],font,{multiline:multilineNames.has(w.name),top:topNames.has(w.name),ruled:ruledNames.has(w.name)})}
+ const gasCleanNames=new Set([
+  'No contrat','N° DU CONTRAT','A2-Coordonnees prestataire','A2-Coordonnees client','A2-Adresse installation','A2-Local chaudiere',
+  'A2-marque1','A2-puissance1','A2-type1','A2-mes1','A2-ns1','A2-Date entretien','A2-Date ramonage',
+  'A2-marque2','A2-puissance2','A2-mes2','A2-ns2','A2-Temp fumees','A2-Temp ambiante','A2-Teneur co2','A2-Teneur o2',
+  'A2-Teneur co','A2-Appareil mesure','A2-Rendement1','A2-Defauts corriges','A2-Usage','A2-Ameliorations','A2-Remplacement',
+  'A2-Fait a','A2-Fait le','A2-Date visite'
+ ]);
+ for(const w of widgets){
+  if(!Object.prototype.hasOwnProperty.call(values,w.name))continue;
+  if(d.type==='gaz'&&gasCleanNames.has(w.name))paintFieldBackground(w.page,w.rect,{margin:.9});
+  drawInRect(w.page,w.rect,values[w.name],font,{multiline:multilineNames.has(w.name),top:topNames.has(w.name),ruled:ruledNames.has(w.name),sizeHint:ruledNames.has(w.name)?7.7:0});
+ }
  const groups=checkGroupOrder(d.type);groups.forEach((g,i)=>{const selected=d.checks[i]||'Oui';const ws=widgets.filter(w=>w.name===`${cfg.prefix}${g}`).sort((a,b)=>a.rect.x-b.rect.x);const idx=selected==='Non'?1:selected==='Sans objet'?2:0;if(ws[idx])drawInRect(ws[idx].page,ws[idx].rect,'X',bold,{align:'center'})});
  const co=Number(String(d.co||'').replace(',','.'));const coWidgets=widgets.filter(w=>w.name===`${cfg.prefix}Groupe18`).sort((a,b)=>b.rect.y-a.rect.y);if(coWidgets.length){const idx=co>=50?2:co>=10?1:0;if(coWidgets[idx])drawInRect(coWidgets[idx].page,coWidgets[idx].rect,'X',bold,{align:'center'})}
  removeWidgets(doc);
  try{const logoBytes=await fetch('logo-exbrayat.png',{cache:'no-store'}).then(r=>r.arrayBuffer()),logo=await doc.embedPng(logoBytes),p0=doc.getPages()[0],ps=p0.getSize();p0.drawImage(logo,{x:ps.width-125,y:ps.height-62,width:105,height:45,opacity:.92})}catch(e){console.warn('Logo non ajoute',e)}
  const last=doc.getPages()[doc.getPageCount()-1];
- async function placeSignature(dataUrl,box){if(!dataUrl)return;const png=await doc.embedPng(await fetch(dataUrl).then(r=>r.arrayBuffer()));const scale=Math.min((box.width-14)/png.width,(box.height-14)/png.height);const width=png.width*scale,height=png.height*scale;last.drawImage(png,{x:box.x+(box.width-width)/2,y:box.y+(box.height-height)/2,width,height})}
+ async function placeSignature(dataUrl,box){if(!dataUrl)return;const png=await doc.embedPng(await fetch(dataUrl).then(r=>r.arrayBuffer()));const scale=Math.min((box.width-10)/png.width,(box.height-10)/png.height);const width=png.width*scale,height=png.height*scale;last.drawImage(png,{x:box.x+(box.width-width)/2,y:box.y+(box.height-height)/2,width,height})}
  if(d.type==='gaz'){await placeSignature(d.sigTech,{x:56,y:43,width:235,height:92});await placeSignature(d.sigClient,{x:313,y:43,width:226,height:92})}
  else{await placeSignature(d.sigTech,{x:56,y:38,width:235,height:88});await placeSignature(d.sigClient,{x:313,y:38,width:226,height:88})}
  const out=await doc.save({useObjectStreams:false});const blob=new Blob([out],{type:'application/pdf'}),url=URL.createObjectURL(blob),name=`ATTESTATION-${d.type.toUpperCase()}-${(d.clientNom||'CLIENT').replace(/[^a-z0-9]/gi,'_')}-${d.dateVisite||''}.pdf`;if(navigator.share&&navigator.canShare){try{const file=new File([blob],name,{type:'application/pdf'});if(navigator.canShare({files:[file]})){await navigator.share({files:[file],title:name});return}}catch(e){}}
