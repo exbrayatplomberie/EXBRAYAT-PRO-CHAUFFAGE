@@ -1,4 +1,4 @@
-EXBRAYAT PRO CHAUFFAGE V0.2.0
+EXBRAYAT PRO CHAUFFAGE V0.2.1
 
 Version de travail séparée de l'application Frigo.
 

@@ -72,8 +72,14 @@ function newForm(){if(!confirm('Créer une nouvelle fiche ?'))return;$('#form').
 $('#saveBtn').onclick=save;$('#newBtn').onclick=newForm;$('#search').oninput=renderHistory;
 $('#saveSettings').onclick=()=>{const s={};Object.keys(defaults()).forEach(k=>s[k]=$('#'+k).value);localStorage.setItem(SETTINGS,JSON.stringify(s));toast('Coordonnées enregistrées')};
 function cleanPdfText(v){return String(v??'').replace(/[\u2010-\u2015]/g,'-').replace(/[\u2018\u2019]/g,"'").replace(/\u00a0/g,' ')}
-function companyText(){const s=settings();return [s.entrepriseNom,s.entrepriseAdresse,`Tel : ${s.entrepriseTel}`,s.entrepriseEmail].filter(Boolean).join('\n')}
-function clientText(d){return [d.clientNom,d.clientTel].filter(Boolean).join('\n')}
+function formatPhone(v){
+ const raw=String(v??'').trim();if(!raw)return '';
+ const digits=raw.replace(/\D/g,'');
+ if(digits.length===10)return digits.match(/.{1,2}/g).join('-');
+ return raw.replace(/[ .]/g,'-').replace(/-+/g,'-');
+}
+function companyText(){const s=settings();return [s.entrepriseNom,s.entrepriseAdresse,`Tel : ${formatPhone(s.entrepriseTel)}`,s.entrepriseEmail].filter(Boolean).join('\n')}
+function clientText(d){return [d.clientNom,formatPhone(d.clientTel)].filter(Boolean).join('\n')}
 function formatDate(v){if(!v)return '';const p=v.split('-');return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:v}
 function widgetName(dict){const parent=dict.lookupMaybe(PDFName.of('Parent'),PDFDict);const t=dict.lookupMaybe(PDFName.of('T'),PDFString)||dict.lookupMaybe(PDFName.of('T'),PDFHexString)||parent?.lookupMaybe(PDFName.of('T'),PDFString)||parent?.lookupMaybe(PDFName.of('T'),PDFHexString);try{return t?.decodeText?.()||''}catch{return ''}}
 function widgetRect(dict){const a=dict.lookupMaybe(PDFName.of('Rect'),PDFArray);if(!a||a.size()<4)return null;const n=i=>a.lookup(i).asNumber();const x1=n(0),y1=n(1),x2=n(2),y2=n(3);return {x:Math.min(x1,x2),y:Math.min(y1,y2),width:Math.abs(x2-x1),height:Math.abs(y2-y1)}}
@@ -85,8 +91,8 @@ function paintFieldBackground(page,rect,{margin=.6,color=rgb(1,1,1)}={}){
 function drawInRect(page,rect,text,font,{multiline=false,align='left',top=false,ruled=false,sizeHint=0}={}){
  if(text===undefined||text===null||text==='')return;
  const value=cleanPdfText(text),pad=3,maxW=Math.max(2,rect.width-pad*2),maxH=Math.max(2,rect.height-pad*2);
- let size=sizeHint||((multiline||ruled)?7.4:7.0),lines=(multiline||ruled)?wrapLines(value,font,size,maxW):[value.replace(/\s*\n\s*/g,' ')];
- while(size>=5.6){const widest=Math.max(...lines.map(l=>font.widthOfTextAtSize(l,size)),0);if(widest<=maxW&&lines.length*size*1.35<=maxH)break;size-=.25;lines=(multiline||ruled)?wrapLines(value,font,size,maxW):lines}
+ let size=sizeHint||((multiline||ruled)?8.5:8.2),lines=(multiline||ruled)?wrapLines(value,font,size,maxW):[value.replace(/\s*\n\s*/g,' ')];
+ while(size>=6.2){const widest=Math.max(...lines.map(l=>font.widthOfTextAtSize(l,size)),0);if(widest<=maxW&&lines.length*size*1.35<=maxH)break;size-=.25;lines=(multiline||ruled)?wrapLines(value,font,size,maxW):lines}
  const lineH=size*1.35;let y=top||ruled?rect.y+rect.height-size-4:rect.y+Math.max(2,(rect.height-size)/2+.6);
  for(const line of lines){let x=rect.x+pad;if(align==='center')x=rect.x+(rect.width-font.widthOfTextAtSize(line,size))/2;page.drawText(line,{x,y,size,font,color:rgb(0,0,0)});y-=lineH;if(y<rect.y+1)break}
 }
@@ -114,7 +120,7 @@ async function createPdf(){if(!$('#form').reportValidity())return;save();const d
  for(const w of widgets){
   if(!Object.prototype.hasOwnProperty.call(values,w.name))continue;
   if(d.type==='gaz'&&gasCleanNames.has(w.name))paintFieldBackground(w.page,w.rect,{margin:.9});
-  drawInRect(w.page,w.rect,values[w.name],font,{multiline:multilineNames.has(w.name),top:topNames.has(w.name),ruled:ruledNames.has(w.name),sizeHint:ruledNames.has(w.name)?7.7:0});
+  drawInRect(w.page,w.rect,values[w.name],bold,{multiline:multilineNames.has(w.name),top:topNames.has(w.name),ruled:ruledNames.has(w.name),sizeHint:ruledNames.has(w.name)?8.7:0});
  }
  const groups=checkGroupOrder(d.type);groups.forEach((g,i)=>{const selected=d.checks[i]||'Oui';const ws=widgets.filter(w=>w.name===`${cfg.prefix}${g}`).sort((a,b)=>a.rect.x-b.rect.x);const idx=selected==='Non'?1:selected==='Sans objet'?2:0;if(ws[idx])drawInRect(ws[idx].page,ws[idx].rect,'X',bold,{align:'center'})});
  const co=Number(String(d.co||'').replace(',','.'));const coWidgets=widgets.filter(w=>w.name===`${cfg.prefix}Groupe18`).sort((a,b)=>b.rect.y-a.rect.y);if(coWidgets.length){const idx=co>=50?2:co>=10?1:0;if(coWidgets[idx])drawInRect(coWidgets[idx].page,coWidgets[idx].rect,'X',bold,{align:'center'})}
