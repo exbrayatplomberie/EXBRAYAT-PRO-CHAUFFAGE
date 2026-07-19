@@ -1,5 +1,5 @@
 'use strict';
-const {PDFDocument,rgb}=PDFLib;
+const {PDFDocument,rgb,StandardFonts}=PDFLib;
 const STORE='exbrayat_chauffage_dossiers_v010', SETTINGS='exbrayat_chauffage_settings_v010';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const CHECKS={
@@ -8,7 +8,7 @@ const CHECKS={
  granules:['Conduit de raccordement','Vacuité du conduit de fumée','Terminal d’évacuation','Amenées d’air comburant','Ventilateur et éléments aérauliques','Décendrage','Joints et éléments amovibles','Organes de sécurité','Circuit d’alimentation combustible','Connexions électriques','Circulateur','Radiateurs et canalisations','Pression réseau hydraulique','Ramonage conduit de fumée','Vase d’expansion','Vidange pot à boues','Bougie d’allumage']
 };
 const FIELD_MAP={
- gaz:{template:'attestation-gaz.pdf',prefix:'A2-',fields:{contrat:'N° DU CONTRAT',entreprise:'Coordonnees prestataire',client:'Coordonnees client',adresse:'Adresse installation',local:'Local chaudiere',marque:'marque1',puissance:'puissance1',evacuation:'type1',miseService:'mes1',serie:'ns1',dernierEntretien:'Date entretien',dernierRamonage:'Date ramonage',bruleurMarque:'marque2',bruleurPuissance:'puissance2',bruleurDate:'mes2',bruleurSerie:'ns2',tempFumees:'Temp fumees',tempAmbiante:'Temp ambiante',co2:'Teneur co2',o2:'Teneur o2',co:'Teneur co',appareilMesure:'Appareil mesure',rendement:'Rendement1',defauts:'Defauts corriges',usage:'Usage',ameliorations:'Ameliorations',remplacement:'Remplacement',ville:'Fait a',dateVisite:'Fait le',dateVisite2:'Date visite'},groups:17},
+ gaz:{template:'attestation-gaz.pdf',prefix:'A2-',fields:{contrat:'No contrat',entreprise:'Coordonnees prestataire',client:'Coordonnees client',adresse:'Adresse installation',local:'Local chaudiere',marque:'marque1',puissance:'puissance1',evacuation:'type1',miseService:'mes1',serie:'ns1',dernierEntretien:'Date entretien',dernierRamonage:'Date ramonage',bruleurMarque:'marque2',bruleurPuissance:'puissance2',bruleurDate:'mes2',bruleurSerie:'ns2',tempFumees:'Temp fumees',tempAmbiante:'Temp ambiante',co2:'Teneur co2',o2:'Teneur o2',co:'Teneur co',appareilMesure:'Appareil mesure',rendement:'Rendement1',defauts:'Defauts corriges',usage:'Usage',ameliorations:'Ameliorations',remplacement:'Remplacement',ville:'Fait a',dateVisite:'Fait le',dateVisite2:'Date visite'},groups:17},
  fioul:{template:'attestation-fioul.pdf',prefix:'A2-',fields:{contrat:'N° DU CONTRAT',entreprise:'Coordonnees prestataire',client:'Coordonnees client',adresse:'Adresse installation',local:'Local chaudiere',marque:'marque1',puissance:'puissance1',evacuation:'type1',miseService:'mes1',serie:'ns1',dernierEntretien:'Date entretien',dernierRamonage:'Date ramonage',bruleurMarque:'marque2',bruleurPuissance:'puissance2',bruleurDate:'mes2',gicleur:'gicleur',bruleurSerie:'ns2',tempFumees:'Temp fumees',tempAmbiante:'Temp ambiante',co2:'Teneur co2',o2:'Teneur o2',pressionGicleur:'Pression gicleur',co:'Teneur co',appareilMesure:'Marque et rélérence',rendement:'Rendement1',defauts:'Defauts corriges',usage:'Usage',ameliorations:'Ameliorations',remplacement:'Remplacement',ville:'Fait a',dateVisite:'Fait le',dateVisite2:'Date visite'},groups:20},
  granules:{template:'attestation-granules.pdf',prefix:'A2-',fields:{contrat:'N° DU CONTRAT',entreprise:'Coordonnees prestataire',client:'Coordonnees client',adresse:'Adresse installation',local:'Local chaudiere',marque:'marque1',puissance:'puissance1',evacuation:'type1',miseService:'mes1',serie:'ns1',dernierEntretien:'Date entretien',dernierRamonage:'Date ramonage',co:'Teneur co',appareilMesure:'Appareil mesure',defauts:'Defauts corriges',usage:'Usage',ameliorations:'Ameliorations',remplacement:'Remplacement',ville:'Fait a',dateVisite:'Fait le',dateVisite2:'Date visite'},groups:17}
 };
@@ -23,25 +23,44 @@ function updateType(){const t=type.value;$('#moduleTitle').textContent={gaz:'Ent
 function renderChecks(t,values=[]){const box=$('#checks');box.innerHTML='';CHECKS[t].forEach((label,i)=>{const row=document.createElement('div');row.className='check-row';row.innerHTML=`<span>${i+1}. ${label}</span><select name="check${i+1}"><option>Oui</option><option>Non</option><option>Sans objet</option></select>`;row.querySelector('select').value=values[i]||'Oui';box.appendChild(row)})}
 type.onchange=updateType;
 function setupCanvas(id){
- const c=$('#'+id),ctx=c.getContext('2d');let down=false,last=null;
- function configure(){ctx.lineWidth=2.4;ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='#111'}
- function resize(){const r=c.getBoundingClientRect(),d=Math.max(1,window.devicePixelRatio||1),old=c.width&&c.height?c.toDataURL('image/png'):'';c.width=Math.max(1,Math.round(r.width*d));c.height=Math.max(1,Math.round(r.height*d));ctx.setTransform(d,0,0,d,0,0);configure();if(old){const im=new Image();im.onload=()=>ctx.drawImage(im,0,0,r.width,r.height);im.src=old}}
- function pos(e){const r=c.getBoundingClientRect();return [e.clientX-r.left,e.clientY-r.top]}
- function start(e){e.preventDefault();down=true;last=pos(e);ctx.beginPath();ctx.moveTo(last[0],last[1]);try{c.setPointerCapture(e.pointerId)}catch(_){} }
- function move(e){if(!down)return;e.preventDefault();const p=pos(e);ctx.lineTo(p[0],p[1]);ctx.stroke();last=p}
- function end(e){if(!down)return;e.preventDefault();down=false;last=null;try{c.releasePointerCapture(e.pointerId)}catch(_){} }
+ const c=$('#'+id),ctx=c.getContext('2d',{willReadFrequently:true});let drawing=false,last=null,ink=false;
+ function configure(){ctx.lineWidth=2.5;ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='#111'}
+ function resize(){
+  const r=c.getBoundingClientRect(),d=Math.max(1,window.devicePixelRatio||1);
+  let old='';try{if(c.width&&c.height)old=c.toDataURL('image/png')}catch(_){}
+  c.width=Math.max(1,Math.round(r.width*d));c.height=Math.max(1,Math.round(r.height*d));
+  ctx.setTransform(d,0,0,d,0,0);configure();
+  if(old){const im=new Image();im.onload=()=>ctx.drawImage(im,0,0,r.width,r.height);im.src=old}
+ }
+ function xy(clientX,clientY){const r=c.getBoundingClientRect();return [clientX-r.left,clientY-r.top]}
+ function begin(x,y,e){if(e)e.preventDefault();drawing=true;last=xy(x,y);ctx.beginPath();ctx.moveTo(last[0],last[1]);ctx.lineTo(last[0]+0.01,last[1]+0.01);ctx.stroke();ink=true}
+ function draw(x,y,e){if(!drawing)return;if(e)e.preventDefault();const p=xy(x,y);ctx.lineTo(p[0],p[1]);ctx.stroke();last=p;ink=true}
+ function stop(e){if(e)e.preventDefault();drawing=false;last=null}
  resize();window.addEventListener('resize',resize);
- c.addEventListener('pointerdown',start,{passive:false});c.addEventListener('pointermove',move,{passive:false});c.addEventListener('pointerup',end,{passive:false});c.addEventListener('pointercancel',end,{passive:false});c.addEventListener('pointerleave',e=>{if(e.buttons===0)end(e)},{passive:false});
+ if(window.PointerEvent){
+  c.addEventListener('pointerdown',e=>{begin(e.clientX,e.clientY,e);try{c.setPointerCapture(e.pointerId)}catch(_){}},{passive:false});
+  c.addEventListener('pointermove',e=>draw(e.clientX,e.clientY,e),{passive:false});
+  c.addEventListener('pointerup',e=>{stop(e);try{c.releasePointerCapture(e.pointerId)}catch(_){}},{passive:false});
+  c.addEventListener('pointercancel',stop,{passive:false});
+ }else{
+  c.addEventListener('mousedown',e=>begin(e.clientX,e.clientY,e));window.addEventListener('mousemove',e=>draw(e.clientX,e.clientY,e));window.addEventListener('mouseup',stop);
+  c.addEventListener('touchstart',e=>{const t=e.touches[0];if(t)begin(t.clientX,t.clientY,e)},{passive:false});
+  c.addEventListener('touchmove',e=>{const t=e.touches[0];if(t)draw(t.clientX,t.clientY,e)},{passive:false});
+  c.addEventListener('touchend',stop,{passive:false});c.addEventListener('touchcancel',stop,{passive:false});
+ }
+ c.dataset.hasInk='0';
+ const mark=()=>{if(ink)c.dataset.hasInk='1'};c.addEventListener('pointerup',mark);c.addEventListener('mouseup',mark);c.addEventListener('touchend',mark);
+ c.clearSignature=()=>{ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,c.width,c.height);ctx.restore();configure();ink=false;c.dataset.hasInk='0'};
  return c
 }
-setupCanvas('sigTech');setupCanvas('sigClient');$$('[data-clear]').forEach(b=>b.onclick=()=>{const c=$('#'+b.dataset.clear);c.getContext('2d').clearRect(0,0,c.width,c.height)});
-function data(){const o=Object.fromEntries(new FormData($('#form')).entries());o.checks=CHECKS[o.type].map((_,i)=>o['check'+(i+1)]||'Oui');o.sigTech=$('#sigTech').toDataURL('image/png');o.sigClient=$('#sigClient').toDataURL('image/png');o.id=o.id||`${Date.now()}`;o.savedAt=new Date().toISOString();return o}
+setupCanvas('sigTech');setupCanvas('sigClient');$$('[data-clear]').forEach(b=>b.onclick=()=>{const c=$('#'+b.dataset.clear);if(c.clearSignature)c.clearSignature()});
+function data(){const o=Object.fromEntries(new FormData($('#form')).entries());o.checks=CHECKS[o.type].map((_,i)=>o['check'+(i+1)]||'Oui');o.sigTech=$('#sigTech').dataset.hasInk==='1'?$('#sigTech').toDataURL('image/png'):'';o.sigClient=$('#sigClient').dataset.hasInk==='1'?$('#sigClient').toDataURL('image/png'):'';o.id=o.id||`${Date.now()}`;o.savedAt=new Date().toISOString();return o}
 function save(){if(!$('#form').reportValidity())return;const d=data(),list=load();const i=list.findIndex(x=>x.id===d.id);i>=0?list[i]=d:list.unshift(d);localStorage.setItem(STORE,JSON.stringify(list));$('#form').dataset.id=d.id;renderHistory();toast('Entretien enregistré')}
 function load(){try{return JSON.parse(localStorage.getItem(STORE)||'[]')}catch{return []}}
 function renderHistory(){const q=($('#search').value||'').toLowerCase(),box=$('#history');box.innerHTML='';load().filter(d=>`${d.clientNom} ${d.ville} ${d.type}`.toLowerCase().includes(q)).forEach(d=>{const r=document.createElement('div');r.className='history-item';r.innerHTML=`<div><strong>${d.clientNom||'Sans nom'}</strong><div>${d.ville||''} — ${d.type} — ${d.dateVisite||''}</div></div><div><button>Ouvrir</button> <button>Supprimer</button></div>`;const [a,b]=r.querySelectorAll('button');a.onclick=()=>fill(d);b.onclick=()=>{if(confirm('Supprimer cet entretien ?')){localStorage.setItem(STORE,JSON.stringify(load().filter(x=>x.id!==d.id)));renderHistory()}};box.appendChild(r)});if(!box.children.length)box.innerHTML='<p class="hint">Aucun entretien enregistré.</p>'}
 function fill(d){$('#form').reset();type.value=d.type||'gaz';updateType();Object.entries(d).forEach(([k,v])=>{const e=$('#form').elements[k];if(e&&typeof v==='string')e.value=v});renderChecks(d.type,d.checks);$('#form').dataset.id=d.id;drawSaved('sigTech',d.sigTech);drawSaved('sigClient',d.sigClient);switchPage('entretien')}
-function drawSaved(id,url){const c=$('#'+id),ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);if(!url)return;const im=new Image();im.onload=()=>ctx.drawImage(im,0,0,c.clientWidth,c.clientHeight);im.src=url}
-function newForm(){if(!confirm('Créer une nouvelle fiche ?'))return;$('#form').reset();delete $('#form').dataset.id;type.value='gaz';$('[name=dateVisite]').value=new Date().toISOString().slice(0,10);updateType();$$('canvas').forEach(c=>c.getContext('2d').clearRect(0,0,c.width,c.height))}
+function drawSaved(id,url){const c=$('#'+id),ctx=c.getContext('2d');if(c.clearSignature)c.clearSignature();if(!url)return;const im=new Image();im.onload=()=>{ctx.drawImage(im,0,0,c.clientWidth,c.clientHeight);c.dataset.hasInk='1'};im.src=url}
+function newForm(){if(!confirm('Créer une nouvelle fiche ?'))return;$('#form').reset();delete $('#form').dataset.id;type.value='gaz';$('[name=dateVisite]').value=new Date().toISOString().slice(0,10);updateType();$$('canvas').forEach(c=>c.clearSignature?c.clearSignature():c.getContext('2d').clearRect(0,0,c.width,c.height))}
 $('#saveBtn').onclick=save;$('#newBtn').onclick=newForm;$('#search').oninput=renderHistory;
 $('#saveSettings').onclick=()=>{const s={};Object.keys(defaults()).forEach(k=>s[k]=$('#'+k).value);localStorage.setItem(SETTINGS,JSON.stringify(s));toast('Coordonnées enregistrées')};
 function safeText(form,name,value){if(value===undefined||value===null||value==='')return;try{form.getTextField(name).setText(String(value))}catch(e){console.debug('Champ absent',name)}}
@@ -51,9 +70,9 @@ function clientText(d){return [d.clientNom,d.clientTel].filter(Boolean).join('\n
 function formatDate(v){if(!v)return '';const p=v.split('-');return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:v}
 async function createPdf(){if(!$('#form').reportValidity())return;save();const d=data(),cfg=FIELD_MAP[d.type];const response=await fetch(cfg.template,{cache:'no-store'});if(!response.ok)throw new Error(`Le modèle PDF ${cfg.template} est introuvable sur GitHub (${response.status}). Téléversez tous les fichiers de la version complète.`);const bytes=await response.arrayBuffer();const head=new Uint8Array(bytes.slice(0,5));if(String.fromCharCode(...head)!=='%PDF-')throw new Error(`Le fichier ${cfg.template} reçu n'est pas un PDF valide. Rechargez la version complète sur GitHub.`);const doc=await PDFDocument.load(bytes),formPdf=doc.getForm(),f=cfg.fields;
  const vals={contrat:d.contrat,entreprise:companyText(),client:clientText(d),adresse:d.adresse,local:d.local,marque:d.marque,puissance:d.puissance,evacuation:d.evacuation,miseService:d.miseService,serie:d.serie,dernierEntretien:d.dernierEntretien,dernierRamonage:d.dernierRamonage,bruleurMarque:d.bruleurMarque,bruleurPuissance:d.bruleurPuissance,bruleurDate:d.bruleurDate,gicleur:d.gicleur,bruleurSerie:d.bruleurSerie,tempFumees:d.tempFumees,tempAmbiante:d.tempAmbiante,co2:d.co2,o2:d.o2,pressionGicleur:d.pressionGicleur,co:d.co,appareilMesure:d.appareilMesure,rendement:d.rendement,defauts:d.defauts,usage:d.usage,ameliorations:d.ameliorations,remplacement:d.remplacement,ville:d.ville,dateVisite:formatDate(d.dateVisite),dateVisite2:formatDate(d.dateVisite)};
- Object.entries(vals).forEach(([k,v])=>{if(f[k])safeText(formPdf,cfg.prefix+f[k],v)});
+ Object.entries(vals).forEach(([k,v])=>{if(f[k])safeText(formPdf,(k==='contrat'&&d.type==='gaz')?f[k]:cfg.prefix+f[k],v)});
  d.checks.forEach((v,i)=>safeSelect(formPdf,`${cfg.prefix}Groupe${i+1}`,v));
- try{formPdf.flatten()}catch(e){console.warn(e)}
+ try{const appearanceFont=await doc.embedFont(StandardFonts.Helvetica);formPdf.updateFieldAppearances(appearanceFont);formPdf.flatten()}catch(e){console.warn('Mise à jour des champs PDF',e)}
  const logoBytes=await fetch('logo-exbrayat.png').then(r=>r.arrayBuffer()),logo=await doc.embedPng(logoBytes),p0=doc.getPages()[0],ps=p0.getSize();p0.drawImage(logo,{x:ps.width-125,y:ps.height-62,width:105,height:45,opacity:.92});
  const last=doc.getPages()[doc.getPageCount()-1],sz=last.getSize();async function sig(url,x){if(!url||url.length<100)return;const png=await doc.embedPng(await fetch(url).then(r=>r.arrayBuffer()));last.drawImage(png,{x,y:35,width:155,height:70})}
  const y=d.type==='gaz'?42:35; if(d.sigTech) {const png=await doc.embedPng(await fetch(d.sigTech).then(r=>r.arrayBuffer()));last.drawImage(png,{x:75,y,width:155,height:70})} if(d.sigClient){const png=await doc.embedPng(await fetch(d.sigClient).then(r=>r.arrayBuffer()));last.drawImage(png,{x:330,y,width:155,height:70})}
