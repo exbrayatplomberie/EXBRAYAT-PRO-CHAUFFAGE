@@ -1,12 +1,8 @@
-EXBRAYAT PRO CHAUFFAGE V0.2.1
+# EXBRAYAT PRO CHAUFFAGE V0.2.2
 
-Version de travail séparée de l'application Frigo.
-
-Nouveautés du module Gaz :
-- masquage des lignes, pointillés et slashs dans les zones remplies ;
-- dates réécrites proprement ;
-- recommandations sur fond blanc sans chevauchement ;
-- signatures recadrées sur l'encre puis centrées dans les cadres ;
-- cache GitHub Pages renouvelé.
-
-Les modules Fioul et Granulés restent présents sans modification de leur moteur PDF.
+Mise à jour du module Gaz :
+- mesures PDF agrandies et en gras ;
+- classification énergétique fonctionnelle ;
+- calcul automatique de la classe A, B, C ou D ;
+- logo EXBRAYAT placé à la place du logo CAPEB principal sur la page 1 ;
+- application Frigo non modifiée.

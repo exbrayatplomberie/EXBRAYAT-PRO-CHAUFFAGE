@@ -19,7 +19,9 @@ function renderSettings(){const s=settings();Object.keys(s).forEach(k=>{const e=
 function switchPage(id){$$('.page').forEach(p=>p.classList.toggle('active',p.id===id));$$('nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===id));if(id==='entretien'){requestAnimationFrame(()=>$$('.signatures canvas').forEach(c=>c.resizeSignature&&c.resizeSignature()));}scrollTo(0,0)}
 $$('nav button').forEach(b=>b.onclick=()=>switchPage(b.dataset.page));
 $$('.modules button[data-type]').forEach(b=>b.onclick=()=>{type.value=b.dataset.type;updateType();switchPage('entretien')});
-function updateType(){const t=type.value;$('#moduleTitle').textContent={gaz:'Entretien chaudière gaz',fioul:'Entretien chaudière fioul',granules:'Entretien poêle / chaudière granulés'}[t];$('#burnerCard').style.display=t==='fioul'||t==='gaz'?'block':'none';$('#gicleurPression').style.display=t==='fioul'?'flex':'none';$('#tirageField').style.display=t==='granules'?'flex':'none';$('#excesField').style.display=t==='granules'?'flex':'none';renderChecks(t)}
+function updateEnergyResult(){const r=$('[name=classeRendement]')?.value||'',f=$('[name=dateFabricationClasse]')?.value||'',el=$('#energyResult');if(!el)return;const map={standard:{avant2005:'Classe énergétique D',apres2005:'Classe énergétique C'},condensation:{avant2005:'Classe énergétique B',apres2005:'Classe énergétique A'}};el.textContent=r&&f?(map[r]?.[f]||''):''}
+function updateType(){const t=type.value;$('#moduleTitle').textContent={gaz:'Entretien chaudière gaz',fioul:'Entretien chaudière fioul',granules:'Entretien poêle / chaudière granulés'}[t];$('#burnerCard').style.display=t==='fioul'||t==='gaz'?'block':'none';$('#gicleurPression').style.display=t==='fioul'?'flex':'none';$('#tirageField').style.display=t==='granules'?'flex':'none';$('#excesField').style.display=t==='granules'?'flex':'none';$('#energyCard').style.display=t==='gaz'?'block':'none';renderChecks(t);updateEnergyResult()}
+$('[name=classeRendement]').onchange=updateEnergyResult;$('[name=dateFabricationClasse]').onchange=updateEnergyResult;
 function renderChecks(t,values=[]){const box=$('#checks');box.innerHTML='';CHECKS[t].forEach((label,i)=>{const row=document.createElement('div');row.className='check-row';row.innerHTML=`<span>${i+1}. ${label}</span><select name="check${i+1}"><option>Oui</option><option>Non</option><option>Sans objet</option></select>`;row.querySelector('select').value=values[i]||'Oui';box.appendChild(row)})}
 type.onchange=updateType;
 function setupCanvas(id){
@@ -110,6 +112,7 @@ async function createPdf(){if(!$('#form').reportValidity())return;save();const d
  const multilineNames=new Set(['A2-Coordonnees prestataire','A2-Coordonnees client','A2-Adresse installation','A2-Local chaudiere','A2-Appareil mesure','A2-Marque et rélérence']);
  const ruledNames=new Set(['A2-Defauts corriges','A2-Usage','A2-Ameliorations','A2-Remplacement']);
  const topNames=new Set(['A2-Coordonnees prestataire','A2-Coordonnees client','A2-Adresse installation','A2-Local chaudiere','A2-Appareil mesure','A2-Marque et rélérence']);
+ const measurementNames=new Set(['A2-Temp fumees','A2-Temp ambiante','A2-Teneur co2','A2-Teneur o2','A2-Pression gicleur','A2-Teneur co','A2-Appareil mesure','A2-Marque et rélérence','A2-Rendement1']);
  const gasCleanNames=new Set([
   'No contrat','N° DU CONTRAT','A2-Coordonnees prestataire','A2-Coordonnees client','A2-Adresse installation','A2-Local chaudiere',
   'A2-marque1','A2-puissance1','A2-type1','A2-mes1','A2-ns1','A2-Date entretien','A2-Date ramonage',
@@ -120,12 +123,21 @@ async function createPdf(){if(!$('#form').reportValidity())return;save();const d
  for(const w of widgets){
   if(!Object.prototype.hasOwnProperty.call(values,w.name))continue;
   if(d.type==='gaz'&&gasCleanNames.has(w.name))paintFieldBackground(w.page,w.rect,{margin:.9});
-  drawInRect(w.page,w.rect,values[w.name],bold,{multiline:multilineNames.has(w.name),top:topNames.has(w.name),ruled:ruledNames.has(w.name),sizeHint:ruledNames.has(w.name)?8.7:0});
+  drawInRect(w.page,w.rect,values[w.name],bold,{multiline:multilineNames.has(w.name),top:topNames.has(w.name),ruled:ruledNames.has(w.name),sizeHint:measurementNames.has(w.name)?10.5:(ruledNames.has(w.name)?8.7:0)});
  }
  const groups=checkGroupOrder(d.type);groups.forEach((g,i)=>{const selected=d.checks[i]||'Oui';const ws=widgets.filter(w=>w.name===`${cfg.prefix}${g}`).sort((a,b)=>a.rect.x-b.rect.x);const idx=selected==='Non'?1:selected==='Sans objet'?2:0;if(ws[idx])drawInRect(ws[idx].page,ws[idx].rect,'X',bold,{align:'center'})});
- const co=Number(String(d.co||'').replace(',','.'));const coWidgets=widgets.filter(w=>w.name===`${cfg.prefix}Groupe18`).sort((a,b)=>b.rect.y-a.rect.y);if(coWidgets.length){const idx=co>=50?2:co>=10?1:0;if(coWidgets[idx])drawInRect(coWidgets[idx].page,coWidgets[idx].rect,'X',bold,{align:'center'})}
+ const co=Number(String(d.co||'').replace(',','.'));const coWidgets=widgets.filter(w=>w.name===`${cfg.prefix}Groupe18`).sort((a,b)=>b.rect.y-a.rect.y);if(coWidgets.length){const idx=co>=50?2:co>=10?1:0;if(coWidgets[idx])drawInRect(coWidgets[idx].page,coWidgets[idx].rect,'X',bold,{align:'center',sizeHint:10})}
+ if(d.type==='gaz'){
+  const classWidgets=widgets.filter(w=>w.name==='A2-GClasse').sort((a,b)=>b.rect.y-a.rect.y);
+  const fabWidgets=widgets.filter(w=>w.name==='A2-GFab').sort((a,b)=>b.rect.y-a.rect.y);
+  const classIdx=d.classeRendement==='condensation'?1:d.classeRendement==='standard'?0:-1;
+  const fabMap={standard:{avant2005:0,apres2005:1},condensation:{avant2005:2,apres2005:3}};
+  const fabIdx=fabMap[d.classeRendement]?.[d.dateFabricationClasse];
+  if(classIdx>=0&&classWidgets[classIdx])drawInRect(classWidgets[classIdx].page,classWidgets[classIdx].rect,'X',bold,{align:'center',sizeHint:10});
+  if(Number.isInteger(fabIdx)&&fabWidgets[fabIdx])drawInRect(fabWidgets[fabIdx].page,fabWidgets[fabIdx].rect,'X',bold,{align:'center',sizeHint:10});
+ }
  removeWidgets(doc);
- try{const logoBytes=await fetch('logo-exbrayat.png',{cache:'no-store'}).then(r=>r.arrayBuffer()),logo=await doc.embedPng(logoBytes),p0=doc.getPages()[0],ps=p0.getSize();p0.drawImage(logo,{x:ps.width-125,y:ps.height-62,width:105,height:45,opacity:.92})}catch(e){console.warn('Logo non ajoute',e)}
+ try{const logoBytes=await fetch('logo-exbrayat.png',{cache:'no-store'}).then(r=>r.arrayBuffer()),logo=await doc.embedPng(logoBytes),p0=doc.getPages()[0];if(d.type==='gaz'){p0.drawRectangle({x:438,y:610,width:145,height:88,color:rgb(1,1,1)});const maxW=125,maxH=72,scale=Math.min(maxW/logo.width,maxH/logo.height),w=logo.width*scale,h=logo.height*scale;p0.drawImage(logo,{x:448+(125-w)/2,y:618+(72-h)/2,width:w,height:h})}else{const ps=p0.getSize();p0.drawImage(logo,{x:ps.width-125,y:ps.height-62,width:105,height:45,opacity:.92})}}catch(e){console.warn('Logo non ajoute',e)}
  const last=doc.getPages()[doc.getPageCount()-1];
  async function placeSignature(dataUrl,box){if(!dataUrl)return;const png=await doc.embedPng(await fetch(dataUrl).then(r=>r.arrayBuffer()));const scale=Math.min((box.width-10)/png.width,(box.height-10)/png.height);const width=png.width*scale,height=png.height*scale;last.drawImage(png,{x:box.x+(box.width-width)/2,y:box.y+(box.height-height)/2,width,height})}
  if(d.type==='gaz'){await placeSignature(d.sigTech,{x:56,y:43,width:235,height:92});await placeSignature(d.sigClient,{x:313,y:43,width:226,height:92})}
