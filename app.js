@@ -16,41 +16,38 @@ function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');se
 function defaults(){return {entrepriseNom:'SARL EXBRAYAT CEDRIC PLOMBERIE CHAUFFAGE',entrepriseAdresse:'26 avenue de Jumeaux\n63570 BRASSAC-LES-MINES',entrepriseTel:'06 17 16 15 38',entrepriseEmail:'cedric.exbrayat@orange.fr',technicien:'EXBRAYAT Cédric'}}
 function settings(){try{return {...defaults(),...JSON.parse(localStorage.getItem(SETTINGS)||'{}')}}catch{return defaults()}}
 function renderSettings(){const s=settings();Object.keys(s).forEach(k=>{const e=$('#'+k);if(e)e.value=s[k]})}
-function switchPage(id){$$('.page').forEach(p=>p.classList.toggle('active',p.id===id));$$('nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===id));scrollTo(0,0)}
+function switchPage(id){$$('.page').forEach(p=>p.classList.toggle('active',p.id===id));$$('nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===id));if(id==='entretien'){requestAnimationFrame(()=>$$('.signatures canvas').forEach(c=>c.resizeSignature&&c.resizeSignature()));}scrollTo(0,0)}
 $$('nav button').forEach(b=>b.onclick=()=>switchPage(b.dataset.page));
 $$('.modules button[data-type]').forEach(b=>b.onclick=()=>{type.value=b.dataset.type;updateType();switchPage('entretien')});
 function updateType(){const t=type.value;$('#moduleTitle').textContent={gaz:'Entretien chaudière gaz',fioul:'Entretien chaudière fioul',granules:'Entretien poêle / chaudière granulés'}[t];$('#burnerCard').style.display=t==='fioul'||t==='gaz'?'block':'none';$('#gicleurPression').style.display=t==='fioul'?'flex':'none';$('#tirageField').style.display=t==='granules'?'flex':'none';$('#excesField').style.display=t==='granules'?'flex':'none';renderChecks(t)}
 function renderChecks(t,values=[]){const box=$('#checks');box.innerHTML='';CHECKS[t].forEach((label,i)=>{const row=document.createElement('div');row.className='check-row';row.innerHTML=`<span>${i+1}. ${label}</span><select name="check${i+1}"><option>Oui</option><option>Non</option><option>Sans objet</option></select>`;row.querySelector('select').value=values[i]||'Oui';box.appendChild(row)})}
 type.onchange=updateType;
 function setupCanvas(id){
- const c=$('#'+id),ctx=c.getContext('2d',{willReadFrequently:true});let drawing=false,last=null,ink=false;
- function configure(){ctx.lineWidth=2.5;ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='#111'}
+ const c=$('#'+id),ctx=c.getContext('2d',{willReadFrequently:true});let drawing=false,ink=false;
+ function configure(){ctx.lineWidth=2.6;ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='#111'}
  function resize(){
-  const r=c.getBoundingClientRect(),d=Math.max(1,window.devicePixelRatio||1);
-  let old='';try{if(c.width&&c.height)old=c.toDataURL('image/png')}catch(_){}
-  c.width=Math.max(1,Math.round(r.width*d));c.height=Math.max(1,Math.round(r.height*d));
-  ctx.setTransform(d,0,0,d,0,0);configure();
-  if(old){const im=new Image();im.onload=()=>ctx.drawImage(im,0,0,r.width,r.height);im.src=old}
+  const r=c.getBoundingClientRect();
+  if(r.width<10||r.height<10)return;
+  const d=Math.max(1,window.devicePixelRatio||1);
+  let old='';try{if(c.width>1&&c.height>1&&c.dataset.hasInk==='1')old=c.toDataURL('image/png')}catch(_){ }
+  const nw=Math.max(1,Math.round(r.width*d)),nh=Math.max(1,Math.round(r.height*d));
+  if(c.width===nw&&c.height===nh)return;
+  c.width=nw;c.height=nh;ctx.setTransform(d,0,0,d,0,0);configure();
+  if(old){const im=new Image();im.onload=()=>{ctx.drawImage(im,0,0,r.width,r.height);c.dataset.hasInk='1'};im.src=old}
  }
- function xy(clientX,clientY){const r=c.getBoundingClientRect();return [clientX-r.left,clientY-r.top]}
- function begin(x,y,e){if(e)e.preventDefault();drawing=true;last=xy(x,y);ctx.beginPath();ctx.moveTo(last[0],last[1]);ctx.lineTo(last[0]+0.01,last[1]+0.01);ctx.stroke();ink=true}
- function draw(x,y,e){if(!drawing)return;if(e)e.preventDefault();const p=xy(x,y);ctx.lineTo(p[0],p[1]);ctx.stroke();last=p;ink=true}
- function stop(e){if(e)e.preventDefault();drawing=false;last=null}
- resize();window.addEventListener('resize',resize);
- if(window.PointerEvent){
-  c.addEventListener('pointerdown',e=>{begin(e.clientX,e.clientY,e);try{c.setPointerCapture(e.pointerId)}catch(_){}},{passive:false});
-  c.addEventListener('pointermove',e=>draw(e.clientX,e.clientY,e),{passive:false});
-  c.addEventListener('pointerup',e=>{stop(e);try{c.releasePointerCapture(e.pointerId)}catch(_){}},{passive:false});
-  c.addEventListener('pointercancel',stop,{passive:false});
- }else{
-  c.addEventListener('mousedown',e=>begin(e.clientX,e.clientY,e));window.addEventListener('mousemove',e=>draw(e.clientX,e.clientY,e));window.addEventListener('mouseup',stop);
-  c.addEventListener('touchstart',e=>{const t=e.touches[0];if(t)begin(t.clientX,t.clientY,e)},{passive:false});
-  c.addEventListener('touchmove',e=>{const t=e.touches[0];if(t)draw(t.clientX,t.clientY,e)},{passive:false});
-  c.addEventListener('touchend',stop,{passive:false});c.addEventListener('touchcancel',stop,{passive:false});
- }
- c.dataset.hasInk='0';
- const mark=()=>{if(ink)c.dataset.hasInk='1'};c.addEventListener('pointerup',mark);c.addEventListener('mouseup',mark);c.addEventListener('touchend',mark);
- c.clearSignature=()=>{ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,c.width,c.height);ctx.restore();configure();ink=false;c.dataset.hasInk='0'};
+ function point(e){const r=c.getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top}}
+ function down(e){e.preventDefault();resize();drawing=true;ink=true;c.dataset.hasInk='1';const p=point(e);ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(p.x+.1,p.y+.1);ctx.stroke();try{c.setPointerCapture(e.pointerId)}catch(_){} }
+ function move(e){if(!drawing)return;e.preventDefault();const p=point(e);ctx.lineTo(p.x,p.y);ctx.stroke()}
+ function up(e){if(!drawing)return;if(e)e.preventDefault();drawing=false;try{if(e)c.releasePointerCapture(e.pointerId)}catch(_){} }
+ c.dataset.hasInk='0';c.resizeSignature=resize;
+ c.addEventListener('pointerdown',down,{passive:false});
+ c.addEventListener('pointermove',move,{passive:false});
+ c.addEventListener('pointerup',up,{passive:false});
+ c.addEventListener('pointercancel',up,{passive:false});
+ c.addEventListener('pointerleave',e=>{if(e.buttons===0)up(e)},{passive:false});
+ c.clearSignature=()=>{resize();ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,c.width,c.height);ctx.restore();const d=Math.max(1,window.devicePixelRatio||1);ctx.setTransform(d,0,0,d,0,0);configure();ink=false;c.dataset.hasInk='0'};
+ if('ResizeObserver' in window){new ResizeObserver(()=>resize()).observe(c)}else window.addEventListener('resize',resize);
+ requestAnimationFrame(resize);
  return c
 }
 setupCanvas('sigTech');setupCanvas('sigClient');$$('[data-clear]').forEach(b=>b.onclick=()=>{const c=$('#'+b.dataset.clear);if(c.clearSignature)c.clearSignature()});
