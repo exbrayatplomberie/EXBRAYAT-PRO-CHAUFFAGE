@@ -1,5 +1,9 @@
-# EXBRAYAT PRO CHAUFFAGE V0.1.0
-Application séparée de la version fluides frigorigènes.
-Modules initiaux : gaz, fioul et granulés.
-Les attestations CAPEB fournies sont intégrées dans le dossier templates.
-Déployer le contenu du ZIP à la racine d'un dépôt GitHub Pages.
+# EXBRAYAT PRO CHAUFFAGE V0.1.1
+
+Correctif ciblé :
+- modèles PDF placés à la racine pour un téléversement simple sur GitHub ;
+- correction de l'erreur « No PDF header found » ;
+- signatures tactiles renforcées sur iPad, téléphone et ordinateur ;
+- cache de l'application renouvelé.
+
+Décompresser le ZIP puis téléverser **tous les fichiers** à la racine du dépôt GitHub.
