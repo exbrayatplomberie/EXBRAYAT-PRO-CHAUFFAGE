@@ -98,6 +98,13 @@ function drawInRect(page,rect,text,font,{multiline=false,align='left',top=false,
  const lineH=size*1.35;let y=top||ruled?rect.y+rect.height-size-4:rect.y+Math.max(2,(rect.height-size)/2+.6);
  for(const line of lines){let x=rect.x+pad;if(align==='center')x=rect.x+(rect.width-font.widthOfTextAtSize(line,size))/2;page.drawText(line,{x,y,size,font,color:rgb(0,0,0)});y-=lineH;if(y<rect.y+1)break}
 }
+function drawCenteredMark(page,rect,text,font,size=11){
+ const value=cleanPdfText(text);if(!value)return;
+ const textW=font.widthOfTextAtSize(value,size),textH=font.heightAtSize(size,{descender:false});
+ const x=rect.x+(rect.width-textW)/2;
+ const y=rect.y+(rect.height-textH)/2+0.8;
+ page.drawText(value,{x,y,size,font,color:rgb(0,0,0)});
+}
 function removeWidgets(doc){for(const page of doc.getPages()){const annots=page.node.Annots();if(!annots)continue;const kept=[];for(let i=0;i<annots.size();i++){const ref=annots.get(i),dict=doc.context.lookup(ref,PDFDict),sub=dict?.lookupMaybe(PDFName.of('Subtype'),PDFName)?.toString();if(sub!=='/Widget')kept.push(ref)}if(kept.length){const arr=doc.context.obj(kept);page.node.set(PDFName.of('Annots'),arr)}else page.node.delete(PDFName.of('Annots'))}doc.catalog.delete(PDFName.of('AcroForm'))}
 function checkGroupOrder(type){if(type==='gaz')return ['Groupe1','Groupe2','Groupe3','Groupe4','Groupe5','Groupe6','Groupe7','Groupe8','Groupe81','Groupe82','Groupe83','Groupe84','Groupe85','Groupe86','Groupe9','Groupe10','Groupe11'];if(type==='fioul')return Array.from({length:20},(_,i)=>`Groupe${i+1}`);return Array.from({length:17},(_,i)=>`Groupe${i+1}`)}
 async function createPdf(){if(!$('#form').reportValidity())return;save();const d=data(),cfg=FIELD_MAP[d.type];const response=await fetch(cfg.template,{cache:'no-store'});if(!response.ok)throw new Error(`Le modele PDF ${cfg.template} est introuvable sur GitHub (${response.status}).`);const bytes=await response.arrayBuffer();const head=new Uint8Array(bytes.slice(0,5));if(String.fromCharCode(...head)!=='%PDF-')throw new Error(`Le fichier ${cfg.template} recu n'est pas un PDF valide.`);const doc=await PDFDocument.load(bytes,{ignoreEncryption:true});const font=await doc.embedFont(StandardFonts.Helvetica);const bold=await doc.embedFont(StandardFonts.HelveticaBold);const widgets=collectWidgets(doc);
@@ -113,6 +120,8 @@ async function createPdf(){if(!$('#form').reportValidity())return;save();const d
  const ruledNames=new Set(['A2-Defauts corriges','A2-Usage','A2-Ameliorations','A2-Remplacement']);
  const topNames=new Set(['A2-Coordonnees prestataire','A2-Coordonnees client','A2-Adresse installation','A2-Local chaudiere','A2-Appareil mesure','A2-Marque et rélérence']);
  const measurementNames=new Set(['A2-Temp fumees','A2-Temp ambiante','A2-Teneur co2','A2-Teneur o2','A2-Pression gicleur','A2-Teneur co','A2-Appareil mesure','A2-Marque et rélérence','A2-Rendement1']);
+ const boilerCharacteristicNames=new Set(['A2-marque1','A2-puissance1','A2-type1','A2-mes1','A2-ns1','A2-marque2','A2-puissance2','A2-mes2','A2-ns2']);
+ const visitFooterNames=new Set(['A2-Fait a','A2-Fait le','A2-Date visite']);
  const gasCleanNames=new Set([
   'No contrat','N° DU CONTRAT','A2-Coordonnees prestataire','A2-Coordonnees client','A2-Adresse installation','A2-Local chaudiere',
   'A2-marque1','A2-puissance1','A2-type1','A2-mes1','A2-ns1','A2-Date entretien','A2-Date ramonage',
@@ -123,18 +132,23 @@ async function createPdf(){if(!$('#form').reportValidity())return;save();const d
  for(const w of widgets){
   if(!Object.prototype.hasOwnProperty.call(values,w.name))continue;
   if(d.type==='gaz'&&gasCleanNames.has(w.name))paintFieldBackground(w.page,w.rect,{margin:.9});
-  drawInRect(w.page,w.rect,values[w.name],bold,{multiline:multilineNames.has(w.name),top:topNames.has(w.name),ruled:ruledNames.has(w.name),sizeHint:measurementNames.has(w.name)?10.5:(ruledNames.has(w.name)?8.7:0)});
+  let sizeHint=0;
+  if(measurementNames.has(w.name))sizeHint=(w.name==='A2-Appareil mesure'||w.name==='A2-Marque et rélérence')?12:11.8;
+  else if(boilerCharacteristicNames.has(w.name))sizeHint=9.8;
+  else if(visitFooterNames.has(w.name))sizeHint=10.5;
+  else if(ruledNames.has(w.name))sizeHint=8.7;
+  drawInRect(w.page,w.rect,values[w.name],bold,{multiline:multilineNames.has(w.name),top:topNames.has(w.name),ruled:ruledNames.has(w.name),sizeHint});
  }
- const groups=checkGroupOrder(d.type);groups.forEach((g,i)=>{const selected=d.checks[i]||'Oui';const ws=widgets.filter(w=>w.name===`${cfg.prefix}${g}`).sort((a,b)=>a.rect.x-b.rect.x);const idx=selected==='Non'?1:selected==='Sans objet'?2:0;if(ws[idx])drawInRect(ws[idx].page,ws[idx].rect,'X',bold,{align:'center'})});
- const co=Number(String(d.co||'').replace(',','.'));const coWidgets=widgets.filter(w=>w.name===`${cfg.prefix}Groupe18`).sort((a,b)=>b.rect.y-a.rect.y);if(coWidgets.length){const idx=co>=50?2:co>=10?1:0;if(coWidgets[idx])drawInRect(coWidgets[idx].page,coWidgets[idx].rect,'X',bold,{align:'center',sizeHint:10})}
+ const groups=checkGroupOrder(d.type);groups.forEach((g,i)=>{const selected=d.checks[i]||'Oui';const ws=widgets.filter(w=>w.name===`${cfg.prefix}${g}`).sort((a,b)=>a.rect.x-b.rect.x);const idx=selected==='Non'?1:selected==='Sans objet'?2:0;if(ws[idx])drawCenteredMark(ws[idx].page,ws[idx].rect,'X',bold,10.5)});
+ const co=Number(String(d.co||'').replace(',','.'));const coWidgets=widgets.filter(w=>w.name===`${cfg.prefix}Groupe18`).sort((a,b)=>b.rect.y-a.rect.y);if(coWidgets.length){const idx=co>=50?2:co>=10?1:0;if(coWidgets[idx])drawCenteredMark(coWidgets[idx].page,coWidgets[idx].rect,'X',bold,10.5)}
  if(d.type==='gaz'){
   const classWidgets=widgets.filter(w=>w.name==='A2-GClasse').sort((a,b)=>b.rect.y-a.rect.y);
   const fabWidgets=widgets.filter(w=>w.name==='A2-GFab').sort((a,b)=>b.rect.y-a.rect.y);
   const classIdx=d.classeRendement==='condensation'?1:d.classeRendement==='standard'?0:-1;
   const fabMap={standard:{avant2005:0,apres2005:1},condensation:{avant2005:2,apres2005:3}};
   const fabIdx=fabMap[d.classeRendement]?.[d.dateFabricationClasse];
-  if(classIdx>=0&&classWidgets[classIdx])drawInRect(classWidgets[classIdx].page,classWidgets[classIdx].rect,'X',bold,{align:'center',sizeHint:10});
-  if(Number.isInteger(fabIdx)&&fabWidgets[fabIdx])drawInRect(fabWidgets[fabIdx].page,fabWidgets[fabIdx].rect,'X',bold,{align:'center',sizeHint:10});
+  if(classIdx>=0&&classWidgets[classIdx])drawCenteredMark(classWidgets[classIdx].page,classWidgets[classIdx].rect,'X',bold,10.5);
+  if(Number.isInteger(fabIdx)&&fabWidgets[fabIdx])drawCenteredMark(fabWidgets[fabIdx].page,fabWidgets[fabIdx].rect,'X',bold,10.5);
  }
  removeWidgets(doc);
  try{const logoBytes=await fetch('logo-exbrayat.png',{cache:'no-store'}).then(r=>r.arrayBuffer()),logo=await doc.embedPng(logoBytes),p0=doc.getPages()[0];if(d.type==='gaz'){p0.drawRectangle({x:438,y:610,width:145,height:88,color:rgb(1,1,1)});const maxW=125,maxH=72,scale=Math.min(maxW/logo.width,maxH/logo.height),w=logo.width*scale,h=logo.height*scale;p0.drawImage(logo,{x:448+(125-w)/2,y:618+(72-h)/2,width:w,height:h})}else{const ps=p0.getSize();p0.drawImage(logo,{x:ps.width-125,y:ps.height-62,width:105,height:45,opacity:.92})}}catch(e){console.warn('Logo non ajoute',e)}

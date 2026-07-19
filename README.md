@@ -1,4 +1,4 @@
-# EXBRAYAT PRO CHAUFFAGE V0.2.2
+# EXBRAYAT PRO CHAUFFAGE V0.2.3
 
 Mise à jour du module Gaz :
 - mesures PDF agrandies et en gras ;
